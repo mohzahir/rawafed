@@ -74,7 +74,7 @@ class CandidateRegistration extends Component
         ]);
 
         $originalFileName = time() . '_' . Str::slug($this->full_name) . '.pdf';
-        $cvPath = $this->cv_file->storeAs('cvs/original', $originalFileName, 'public');
+        $cvPath = $this->cv_file->storeAs('cvs/original', $originalFileName, 'local');
         $generatedCode = 'RWD-' . strtoupper(Str::random(6));
 
         // 1. إنشاء السجل الأولي في قاعدة البيانات بسرعة (مخفي تماماً)
@@ -98,7 +98,8 @@ class CandidateRegistration extends Component
             'prometric_status' => 'غير محدد',
             'notice_period' => 'غير محدد',
             'original_cv_path' => $cvPath,
-            'blind_cv_path' => null, // سيتم إنشاؤه في الخلفية
+            'blind_cv_path' => null,
+            'summary_cv_path' => null,
             'needs_manual_review' => false,
             'is_active' => false, // مخفي!
         ]);
@@ -152,7 +153,7 @@ class CandidateRegistration extends Component
         ]);
 
         $originalFileName = time() . '_' . Str::slug($this->full_name) . '.pdf';
-        $cvPath = $this->cv_file->storeAs('cvs/original', $originalFileName, 'public');
+        $cvPath = $this->cv_file->storeAs('cvs/original', $originalFileName, 'local');
         $generatedCode = 'RWD-' . strtoupper(Str::random(6));
 
         // 1. إنشاء السجل الأولي
@@ -176,7 +177,8 @@ class CandidateRegistration extends Component
             'prometric_status' => $this->prometric_status,
             'notice_period' => $this->notice_period,
             'original_cv_path' => $cvPath,
-            'blind_cv_path' => null, // سيتم طمسه لاحقاً
+            'blind_cv_path' => null,
+            'summary_cv_path' => null,
             'needs_manual_review' => false,
             'is_active' => false, // ⚠️ مخفي حتى تنتهي المعالجة (تُدار من الـ Job)
         ]);

@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\CandidateSummaryController;
 use App\Http\Controllers\LoginController; 
 use App\Livewire\LandingPage;
 use App\Livewire\BlindCatalog;
@@ -18,6 +19,8 @@ use App\Livewire\Admin\HospitalRequestsManager;
 Route::get('/', LandingPage::class)->name('home');
 Route::get('/catalog', BlindCatalog::class)->name('catalog');
 Route::get('/join', CandidateRegistration::class)->name('candidate.register');
+Route::get('/candidates/{candidate}/summary', CandidateSummaryController::class)
+    ->name('candidates.summary');
 
 // 🌟 مسار صفحة الهبوط للوظيفة (SEO Friendly)
 Route::get('/jobs/{slug}', JobLandingPage::class)->name('jobs.show');

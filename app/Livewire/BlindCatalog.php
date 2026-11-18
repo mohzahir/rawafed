@@ -140,7 +140,10 @@ class BlindCatalog extends Component
 
     public function showCandidateDetails($id)
     {
-        $this->selectedCandidate = Candidate::find($id);
+        $this->selectedCandidate = Candidate::query()
+            ->where('is_active', true)
+            ->whereNotNull('summary_cv_path')
+            ->findOrFail($id);
         $this->dispatch('open-slide-panel');
     }
 
@@ -193,7 +196,9 @@ class BlindCatalog extends Component
 
     public function render()
     {
-        $query = Candidate::query()->where('is_active', true);
+        $query = Candidate::query()
+            ->where('is_active', true)
+            ->whereNotNull('summary_cv_path');
         $currentMapping = $this->tabsMapping[$this->selectedTab];
 
         $query->whereIn('professional_title', $currentMapping['titles'])

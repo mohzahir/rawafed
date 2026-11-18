@@ -624,15 +624,15 @@
 
                 <div id="tab-content-cv" class="hidden h-full min-h-[500px]">
                     <div class="bg-white p-2 rounded-2xl border border-gray-100 shadow-sm h-full flex flex-col">
-                        @if($selectedCandidate->blind_cv_path)
+                        @if($selectedCandidate->summary_cv_path)
                             <div class="flex justify-between items-center p-3 mb-2 bg-gray-50 rounded-xl">
                                 <span class="text-xs font-bold text-gray-500 flex items-center gap-2">
                                     <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>
-                                    السيرة الذاتية العمياء (للمستشفيات)
+                                    ملخص السيرة الذاتية (للمستشفيات)
                                 </span>
-                                <a href="{{ Storage::url($selectedCandidate->blind_cv_path) }}" target="_blank" class="text-[10px] font-bold text-[#0a3d62] bg-white border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">فتح في نافذة</a>
+                                <a href="{{ route('candidates.summary', $selectedCandidate) }}" target="_blank" class="text-[10px] font-bold text-[#0a3d62] bg-white border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">فتح في نافذة</a>
                             </div>
-                            <iframe src="{{ Storage::url($selectedCandidate->blind_cv_path) }}" class="w-full flex-1 rounded-xl border border-gray-100" title="السيرة الذاتية"></iframe>
+                            <iframe src="{{ route('candidates.summary', $selectedCandidate) }}" class="w-full flex-1 rounded-xl border border-gray-100" title="ملخص السيرة الذاتية"></iframe>
                         @else
                             <div class="flex-1 flex flex-col items-center justify-center text-gray-400">
                                 <svg class="w-16 h-16 mb-4 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
