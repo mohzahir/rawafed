@@ -23,6 +23,7 @@ class CandidateSummaryTest extends TestCase
         Storage::fake('local');
         Storage::fake('public');
         Mail::fake();
+        config(['services.gemini.api_key' => 'test-gemini-key']);
 
         $candidate = $this->createCandidate();
         Storage::disk('local')->put($candidate->original_cv_path, 'fake pdf bytes');
@@ -44,6 +45,8 @@ class CandidateSummaryTest extends TestCase
         ]);
 
         (new ProcessCandidateCV($candidate->id))->handle();
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'key=test-gemini-key'));
 
         $candidate->refresh();
         $this->assertSame('cvs/summaries/' . $candidate->id . '.html', $candidate->summary_cv_path);

@@ -46,10 +46,15 @@ class ProcessCandidateCV implements ShouldQueue
         }
 
         try {
+            $apiKey = config('services.gemini.api_key');
+            if (!$apiKey) {
+                throw new \RuntimeException('GEMINI_API_KEY is not configured.');
+            }
+
             $prompt = 'أنت خبير توظيف طبي. اكتب ملخصاً مهنياً دقيقاً باللغة العربية لهذا الملف، في JSON صالح فقط بالمفاتيح: "summary" (نص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. احذف تماماً اسم المرشح والبريد والهاتف والعنوان الدقيق وتاريخ الميلاد وأرقام الهوية والروابط وأي بيانات اتصال أو تعريف شخصية. اذكر الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.';
             $response = Http::timeout(120)
                 ->withHeaders(['Content-Type' => 'application/json'])
-                ->post('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' . env('GEMINI_API_KEY'), [
+                ->post('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' . $apiKey, [
                     'contents' => [[
                         'parts' => [
                             ['text' => $prompt],
