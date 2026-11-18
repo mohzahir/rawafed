@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CandidateSummaryController;
+use App\Http\Controllers\Admin\CandidateOriginalCvController;
 use App\Http\Controllers\LoginController; 
 use App\Livewire\LandingPage;
 use App\Livewire\BlindCatalog;
@@ -39,6 +40,8 @@ Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 // مسارات الإدارة المحمية (تتطلب تسجيل الدخول)
 // ==========================================
 Route::middleware(['auth'])->group(function () {
+    Route::get('/admin/candidates/{candidate}/original-cv', CandidateOriginalCvController::class)
+        ->name('admin.candidates.original-cv');
     Route::get('/admin/import', BulkCsvUpload::class)->name('admin.import');
     Route::get('/admin/dashboard', Dashboard::class)->name('admin.dashboard');
     

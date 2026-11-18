@@ -3,11 +3,15 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessCandidateCV;
+use App\Livewire\Admin\Dashboard;
 use App\Models\Candidate;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class CandidateSummaryTest extends TestCase
@@ -67,10 +71,49 @@ class CandidateSummaryTest extends TestCase
         $this->get(route('candidates.summary', $candidate))->assertNotFound();
     }
 
+    public function test_original_cv_is_only_available_to_an_authenticated_admin(): void
+    {
+        Storage::fake('local');
+        $candidate = $this->createCandidate();
+        Storage::disk('local')->put($candidate->original_cv_path, '%PDF-private-cv');
+
+        $this->get(route('admin.candidates.original-cv', $candidate))->assertRedirect(route('login'));
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('admin.candidates.original-cv', $candidate))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertSee('%PDF-private-cv', false);
+    }
+
+    public function test_dashboard_toggle_requires_a_summary_to_activate_and_can_toggle_ready_candidates(): void
+    {
+        Storage::fake('local');
+        $candidate = $this->createCandidate();
+
+        Livewire::test(Dashboard::class)
+            ->call('toggleStatus', $candidate->id)
+            ->assertSee('لا يمكن تفعيل المرشح قبل إنشاء ملخص السيرة الذاتية.');
+
+        $this->assertDatabaseHas('candidates', ['id' => $candidate->id, 'is_active' => false]);
+
+        $summaryPath = 'cvs/summaries/' . $candidate->id . '.html';
+        Storage::disk('local')->put($summaryPath, 'summary');
+        $candidate->update(['summary_cv_path' => $summaryPath]);
+
+        Livewire::test(Dashboard::class)
+            ->call('toggleStatus', $candidate->id);
+        $this->assertDatabaseHas('candidates', ['id' => $candidate->id, 'is_active' => true]);
+
+        Livewire::test(Dashboard::class)
+            ->call('toggleStatus', $candidate->id);
+        $this->assertDatabaseHas('candidates', ['id' => $candidate->id, 'is_active' => false]);
+    }
+
     private function createCandidate(): Candidate
     {
         return Candidate::create([
-            'candidate_code' => 'RWD-TEST01',
+            'candidate_code' => 'RWD-TEST' . strtoupper(Str::random(6)),
             'full_name' => 'د. أحمد',
             'email' => 'ahmed@example.com',
             'phone' => '12345678',

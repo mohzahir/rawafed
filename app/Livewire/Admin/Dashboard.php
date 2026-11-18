@@ -23,11 +23,15 @@ class Dashboard extends Component
     // دالة تفعيل/إلغاء تفعيل المرشح (ليظهر أو يختفي من الكتالوج)
     public function toggleStatus($id)
     {
-        $candidate = Candidate::find($id);
-        if ($candidate) {
-            $candidate->is_active = !$candidate->is_active;
-            $candidate->save();
+        $candidate = Candidate::findOrFail($id);
+
+        if (!$candidate->is_active && (!$candidate->summary_cv_path || !Storage::disk('local')->exists($candidate->summary_cv_path))) {
+            session()->flash('statusMessage', 'لا يمكن تفعيل المرشح قبل إنشاء ملخص السيرة الذاتية.');
+            return;
         }
+
+        $candidate->update(['is_active' => !$candidate->is_active]);
+        session()->flash('statusMessage', $candidate->is_active ? 'تم تفعيل المرشح.' : 'تم إخفاء المرشح من الكتالوج.');
     }
 
     // دالة حذف المرشح تماماً
@@ -36,8 +40,12 @@ class Dashboard extends Component
         $candidate = Candidate::find($id);
         if ($candidate) {
             // حذف الملفات المرتبطة به من السيرفر (اختياري، يفضل للحفاظ على المساحة)
-            if ($candidate->original_cv_path) Storage::disk('public')->delete($candidate->original_cv_path);
+            if ($candidate->original_cv_path) {
+                Storage::disk('local')->delete($candidate->original_cv_path);
+                Storage::disk('public')->delete($candidate->original_cv_path);
+            }
             if ($candidate->blind_cv_path) Storage::disk('public')->delete($candidate->blind_cv_path);
+            if ($candidate->summary_cv_path) Storage::disk('local')->delete($candidate->summary_cv_path);
             
             $candidate->delete();
         }

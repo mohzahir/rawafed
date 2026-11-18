@@ -19,6 +19,12 @@
     </nav>
 
     <div class="max-w-7xl mx-auto px-6 py-8">
+
+        @if(session()->has('statusMessage'))
+            <div class="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800" role="status">
+                {{ session('statusMessage') }}
+            </div>
+        @endif
         
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
@@ -81,8 +87,9 @@
                                 </td>
                                 
                                 <td class="px-6 py-4">
-                                    <button wire:click="toggleStatus({{ $candidate->id }})" 
+                                        <button type="button" wire:click="toggleStatus({{ $candidate->id }})" 
                                             wire:loading.attr="disabled"
+                                            wire:target="toggleStatus({{ $candidate->id }})"
                                             class="relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-300 focus:outline-none {{ $candidate->is_active ? 'bg-green-500' : 'bg-gray-300' }} disabled:opacity-50">
                                         <span class="inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-300 {{ $candidate->is_active ? '-translate-x-6' : '-translate-x-1' }}"></span>
                                     </button>
@@ -94,7 +101,7 @@
                                 <td class="px-6 py-4 text-center">
                                     <div class="flex items-center justify-center gap-2">
                                         @if($candidate->original_cv_path)
-                                            <a href="{{ asset('storage/' . $candidate->original_cv_path) }}" target="_blank" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg transition" title="عرض السيرة الأصلية">
+                                            <a href="{{ route('admin.candidates.original-cv', $candidate) }}" target="_blank" rel="noopener" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg transition" title="عرض السيرة الأصلية">
                                                 📄
                                             </a>
                                         @endif
