@@ -23,30 +23,42 @@ class CandidateSummaryTest extends TestCase
         Storage::fake('local');
         Storage::fake('public');
         Mail::fake();
-        config(['services.gemini.api_key' => 'test-gemini-key']);
+        config([
+            'services.groq.api_key' => 'test-groq-key',
+            'services.groq.model' => 'llama-3.3-70b-versatile',
+        ]);
 
         $candidate = $this->createCandidate();
         Storage::disk('local')->put($candidate->original_cv_path, 'fake pdf bytes');
 
         Http::fake([
-            'generativelanguage.googleapis.com/*' => Http::response([
-                'candidates' => [[
-                    'content' => ['parts' => [[
-                        'text' => json_encode([
-                            'summary' => 'خبرة في العناية المركزة. د. أحمد ahmed@example.com 12345678',
-                            'skills' => ['العناية المركزة'],
-                            'experience_years' => 8,
-                            'inferred_title' => 'طبيب استشاري',
-                            'inferred_specialty' => 'عناية مركزة',
-                        ], JSON_UNESCAPED_UNICODE),
-                    ]]],
+            'api.groq.com/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode([
+                        'summary' => 'خبرة في العناية المركزة. د. أحمد ahmed@example.com 12345678',
+                        'skills' => ['العناية المركزة'],
+                        'experience_years' => 8,
+                        'inferred_title' => 'طبيب استشاري',
+                        'inferred_specialty' => 'عناية مركزة',
+                    ], JSON_UNESCAPED_UNICODE)],
                 ]],
             ]),
         ]);
 
-        (new ProcessCandidateCV($candidate->id))->handle();
+        $job = new class($candidate->id) extends ProcessCandidateCV {
+            protected function extractPdfText(string $pdfContents): string
+            {
+                return str_repeat('خبرة طبية ومهارات العناية المركزة والمؤهلات المهنية. ', 5)
+                    . ' د. أحمد ahmed@example.com 12345678';
+            }
+        };
+        $job->handle();
 
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'key=test-gemini-key'));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.groq.com/openai/v1/chat/completions')
+            && $request->hasHeader('Authorization', 'Bearer test-groq-key')
+            && $request['model'] === 'llama-3.3-70b-versatile'
+            && !str_contains(json_encode($request['messages']), 'ahmed@example.com')
+            && !str_contains(json_encode($request['messages']), '12345678'));
 
         $candidate->refresh();
         $this->assertSame('cvs/summaries/' . $candidate->id . '.html', $candidate->summary_cv_path);

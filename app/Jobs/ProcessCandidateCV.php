@@ -46,36 +46,48 @@ class ProcessCandidateCV implements ShouldQueue
         }
 
         try {
-            $apiKey = config('services.gemini.api_key');
+            $apiKey = config('services.groq.api_key');
             if (!$apiKey) {
-                throw new \RuntimeException('GEMINI_API_KEY is not configured.');
+                throw new \RuntimeException('GROQ_API_KEY is not configured.');
             }
 
-            $prompt = 'أنت خبير توظيف طبي. اكتب ملخصاً مهنياً دقيقاً باللغة العربية لهذا الملف، في JSON صالح فقط بالمفاتيح: "summary" (نص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. احذف تماماً اسم المرشح والبريد والهاتف والعنوان الدقيق وتاريخ الميلاد وأرقام الهوية والروابط وأي بيانات اتصال أو تعريف شخصية. اذكر الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.';
-            $response = Http::timeout(120)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->post('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=' . $apiKey, [
-                    'contents' => [[
-                        'parts' => [
-                            ['text' => $prompt],
-                            ['inline_data' => [
-                                'mime_type' => 'application/pdf',
-                                'data' => base64_encode($originalDisk->get($candidate->original_cv_path)),
-                            ]],
-                        ],
-                    ]],
-                    'generationConfig' => ['response_mime_type' => 'application/json'],
+            $pdfText = $this->extractPdfText($originalDisk->get($candidate->original_cv_path));
+            if (mb_strlen(trim($pdfText)) < 80) {
+                throw new \RuntimeException('The PDF has too little extractable text; scanned CVs require OCR.');
+            }
+
+            $pdfText = str_replace(
+                array_filter([$candidate->full_name, $candidate->email, $candidate->phone]),
+                '[بيانات محذوفة]',
+                $pdfText
+            );
+            $pdfText = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu', '[بريد محذوف]', $pdfText) ?? $pdfText;
+            $pdfText = preg_replace('/(?:https?:\/\/|www\.)\S+/iu', '[رابط محذوف]', $pdfText) ?? $pdfText;
+
+            $prompt = 'أنت خبير توظيف طبي. اكتب ملخصاً مهنياً دقيقاً باللغة العربية اعتماداً على نص السيرة أدناه. أخرج JSON صالحاً فقط بالمفاتيح: "summary" (ملخص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. لا تُدرج اسم المرشح أو البريد أو الهاتف أو العنوان أو تاريخ الميلاد أو أرقام الهوية أو الروابط أو أي بيانات اتصال أو تعريف شخصية. أدرج الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.\n\nنص السيرة الذاتية:\n' . mb_substr($pdfText, 0, 24000);
+            $response = Http::withToken($apiKey)
+                ->acceptJson()
+                ->timeout(120)
+                ->post('https://api.groq.com/openai/v1/chat/completions', [
+                    'model' => config('services.groq.model'),
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'أخرج JSON صالحاً فقط. لا تكشف بيانات التعريف الشخصية الواردة في نص السيرة.'],
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                    'response_format' => ['type' => 'json_object'],
+                    'temperature' => 0.1,
+                    'max_tokens' => 2500,
                 ]);
 
             if (!$response->successful()) {
-                throw new \RuntimeException('Gemini API request failed with status ' . $response->status());
+                throw new \RuntimeException('Groq API request failed with status ' . $response->status());
             }
 
-            $aiText = $response->json('candidates.0.content.parts.0.text');
+            $aiText = $response->json('choices.0.message.content');
             $parsedData = json_decode(trim(str_replace(['```json', '```'], '', (string) $aiText)), true);
             $summary = trim((string) ($parsedData['summary'] ?? ''));
             if (!is_array($parsedData) || $summary === '') {
-                throw new \RuntimeException('Gemini did not return a usable CV summary.');
+                throw new \RuntimeException('Groq did not return a usable CV summary.');
             }
 
             $summary = str_replace(
@@ -126,5 +138,12 @@ class ProcessCandidateCV implements ShouldQueue
         } catch (\Throwable $e) {
             Log::error('Background Email Failed: ' . $e->getMessage());
         }
+    }
+
+    protected function extractPdfText(string $pdfContents): string
+    {
+        $parser = new \Smalot\PdfParser\Parser();
+
+        return $parser->parseContent($pdfContents)->getText();
     }
 }
