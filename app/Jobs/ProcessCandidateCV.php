@@ -33,8 +33,13 @@ class ProcessCandidateCV implements ShouldQueue
     {
         $candidate = Candidate::find($this->candidateId);
         if (!$candidate || !$candidate->original_cv_path) {
+            Log::warning('Candidate CV summary job has no candidate or original CV.', [
+                'candidate_id' => $this->candidateId,
+            ]);
             return;
         }
+
+        Log::info('Candidate CV summary job started.', ['candidate_id' => $candidate->id]);
 
         $privateDisk = Storage::disk('local');
         $originalDisk = $privateDisk->exists($candidate->original_cv_path)
@@ -125,6 +130,10 @@ class ProcessCandidateCV implements ShouldQueue
             }
 
             $candidate->update($updateData);
+            Log::info('Candidate CV summary generated.', [
+                'candidate_id' => $candidate->id,
+                'summary_path' => $summaryPath,
+            ]);
         } catch (\Throwable $e) {
             Log::error('Candidate CV summary generation failed.', [
                 'candidate_id' => $candidate->id,

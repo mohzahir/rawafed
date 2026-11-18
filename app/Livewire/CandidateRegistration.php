@@ -6,6 +6,7 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 use App\Models\Candidate;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 use App\Jobs\ProcessCandidateCV; // 🌟 استدعاء الـ Job الجديد
 
 class CandidateRegistration extends Component
@@ -108,6 +109,7 @@ class CandidateRegistration extends Component
 
         // 🌟 2. إرسال المهام الثقيلة لتعمل في الخلفية (في الطابور)
         ProcessCandidateCV::dispatch($candidate->id, true);
+        Log::info('Candidate CV summary job queued.', ['candidate_id' => $candidate->id]);
 
         // 3. إظهار شاشة النجاح فوراً للطبيب!
         $this->isSubmitted = true;
@@ -185,6 +187,7 @@ class CandidateRegistration extends Component
 
         // 🌟 2. إرسال المهمة للخلفية
         ProcessCandidateCV::dispatch($candidate->id, false);
+        Log::info('Candidate CV summary job queued.', ['candidate_id' => $candidate->id]);
 
         // 3. إظهار شاشة النجاح فوراً
         $this->isSubmitted = true;
