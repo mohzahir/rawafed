@@ -22,6 +22,8 @@ class ProcessCandidateCV implements ShouldQueue
     public $isFastTrack;
 
     public $timeout = 180;
+    public $tries = 5;
+    public $backoff = [30, 60, 120, 300];
 
     public function __construct($candidateId, $isFastTrack = false)
     {
@@ -51,18 +53,18 @@ class ProcessCandidateCV implements ShouldQueue
         }
 
         try {
-            $apiKey = config('services.openai.api_key');
+            $apiKey = config('services.gemini.api_key');
             if (!$apiKey) {
-                throw new \RuntimeException('OPENAI_API_KEY is not configured.');
+                throw new \RuntimeException('GEMINI_API_KEY is not configured.');
             }
 
             $pdfContents = $originalDisk->get($candidate->original_cv_path);
             $pdfText = trim($this->extractPdfText($pdfContents));
             $hasExtractableText = mb_strlen($pdfText) >= 80;
 
-            $prompt = 'أنت خبير توظيف طبي. أنشئ ملخصاً مهنياً دقيقاً باللغة العربية من السيرة الذاتية المرفقة أو نصها. أخرج JSON صالحاً فقط بالمفاتيح: "summary" (ملخص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. لا تُدرج اسم المرشح أو البريد أو الهاتف أو العنوان الدقيق أو تاريخ الميلاد أو أرقام الهوية أو الروابط أو أي بيانات اتصال أو تعريف شخصية. أدرج الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.';
+            $prompt = 'أنت خبير توظيف طبي. أنشئ ملخصاً مهنياً دقيقاً باللغة العربية من السيرة الذاتية. أخرج JSON صالحاً فقط بالمفاتيح: "summary" (ملخص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. لا تُدرج اسم المرشح أو البريد أو الهاتف أو العنوان الدقيق أو تاريخ الميلاد أو أرقام الهوية أو الروابط أو أي بيانات اتصال أو تعريف شخصية. إذا كانت الصفحات صوراً ممسوحة ضوئياً، اقرأ النص الظاهر فيها. أدرج الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.';
 
-            $userContent = [['type' => 'input_text', 'text' => $prompt]];
+            $parts = [['text' => $prompt]];
             if ($hasExtractableText) {
                 $pdfText = str_replace(
                     array_filter([$candidate->full_name, $candidate->email, $candidate->phone]),
@@ -71,49 +73,48 @@ class ProcessCandidateCV implements ShouldQueue
                 );
                 $pdfText = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu', '[بريد محذوف]', $pdfText) ?? $pdfText;
                 $pdfText = preg_replace('/(?:https?:\/\/|www\.)\S+/iu', '[رابط محذوف]', $pdfText) ?? $pdfText;
-                $userContent[] = [
-                    'type' => 'input_text',
-                    'text' => "Extracted CV text:\n" . mb_substr($pdfText, 0, 24000),
-                ];
+                $parts[] = ['text' => "Extracted CV text:\n" . mb_substr($pdfText, 0, 24000)];
             } else {
-                $userContent[] = [
-                    'type' => 'input_file',
-                    'filename' => 'candidate-cv.pdf',
-                    'file_data' => 'data:application/pdf;base64,' . base64_encode($pdfContents),
-                    'detail' => 'high',
-                ];
+                $parts[] = ['inline_data' => [
+                    'mime_type' => 'application/pdf',
+                    'data' => base64_encode($pdfContents),
+                ]];
             }
 
-            $response = Http::withToken($apiKey)
-                ->acceptJson()
+            $response = Http::acceptJson()
                 ->timeout(120)
-                ->post('https://api.openai.com/v1/responses', [
-                    'model' => config('services.openai.model'),
-                    'instructions' => 'أخرج JSON صالحاً فقط. لا تكشف بيانات التعريف الشخصية الواردة في السيرة. إن كانت السيرة ممسوحة ضوئياً، اقرأ النص من صور الصفحات ثم لخّص الخبرة المهنية فقط.',
-                    'input' => [[
-                        'role' => 'user',
-                        'content' => $userContent,
-                    ]],
-                    'max_output_tokens' => 2500,
+                ->post('https://generativelanguage.googleapis.com/v1beta/models/' . config('services.gemini.model') . ':generateContent?key=' . $apiKey, [
+                    'contents' => [['parts' => $parts]],
+                    'generationConfig' => [
+                        'response_mime_type' => 'application/json',
+                        'maxOutputTokens' => 2500,
+                        'temperature' => 0.1,
+                    ],
                 ]);
 
             if (!$response->successful()) {
                 $providerMessage = $response->json('error.message') ?? 'No provider error message returned.';
-                Log::error('OpenAI API request failed.', [
+                Log::error('Gemini API request failed.', [
                     'candidate_id' => $candidate->id,
                     'status' => $response->status(),
-                    'model' => config('services.openai.model'),
+                    'model' => config('services.gemini.model'),
                     'provider_message' => mb_substr((string) $providerMessage, 0, 1000),
                 ]);
 
-                throw new \RuntimeException('OpenAI API request failed with status ' . $response->status());
+                if ($response->status() === 429) {
+                    $retryAfter = (int) $response->header('Retry-After', 60);
+                    $this->release(max(10, min($retryAfter, 900)));
+                    return;
+                }
+
+                throw new \RuntimeException('Gemini API request failed with status ' . $response->status());
             }
 
-            $aiText = $this->extractResponseText($response->json());
+            $aiText = $response->json('candidates.0.content.parts.0.text');
             $parsedData = json_decode(trim(str_replace(['```json', '```'], '', (string) $aiText)), true);
             $summary = trim((string) ($parsedData['summary'] ?? ''));
             if (!is_array($parsedData) || $summary === '') {
-                throw new \RuntimeException('OpenAI did not return a usable CV summary.');
+                throw new \RuntimeException('Gemini did not return a usable CV summary.');
             }
 
             $summary = str_replace(
@@ -177,21 +178,4 @@ class ProcessCandidateCV implements ShouldQueue
         return $parser->parseContent($pdfContents)->getText();
     }
 
-    protected function extractResponseText(array $response): string
-    {
-        if (isset($response['output_text'])) {
-            return (string) $response['output_text'];
-        }
-
-        $text = [];
-        foreach ($response['output'] ?? [] as $item) {
-            foreach ($item['content'] ?? [] as $content) {
-                if (($content['type'] ?? null) === 'output_text') {
-                    $text[] = $content['text'] ?? '';
-                }
-            }
-        }
-
-        return implode("\n", $text);
-    }
 }

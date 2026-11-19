@@ -25,19 +25,17 @@ class CandidateSummaryTest extends TestCase
         Storage::fake('public');
         Mail::fake();
         config([
-            'services.openai.api_key' => 'test-openai-key',
-            'services.openai.model' => 'gpt-6.2-sol',
+            'services.gemini.api_key' => 'test-gemini-key',
+            'services.gemini.model' => 'gemini-3.8-flash',
         ]);
 
         $candidate = $this->createCandidate();
         Storage::disk('local')->put($candidate->original_cv_path, 'fake pdf bytes');
 
         Http::fake([
-            'api.openai.com/v1/responses' => Http::response([
-                'output' => [[
-                    'type' => 'message',
-                    'content' => [[
-                        'type' => 'output_text',
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [[
                         'text' => json_encode([
                             'summary' => 'خبرة في العناية المركزة. د. أحمد ahmed@example.com 12345678',
                             'skills' => ['العناية المركزة'],
@@ -45,7 +43,7 @@ class CandidateSummaryTest extends TestCase
                             'inferred_title' => 'طبيب استشاري',
                             'inferred_specialty' => 'عناية مركزة',
                         ], JSON_UNESCAPED_UNICODE),
-                    ]],
+                    ]]],
                 ]],
             ]),
         ]);
@@ -59,11 +57,10 @@ class CandidateSummaryTest extends TestCase
         };
         $job->handle();
 
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.openai.com/v1/responses')
-            && $request->hasHeader('Authorization', 'Bearer test-openai-key')
-            && $request['model'] === 'gpt-6.2-sol'
-            && !str_contains(json_encode($request['input']), 'ahmed@example.com')
-            && !str_contains(json_encode($request['input']), '12345678'));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'models/gemini-3.8-flash:generateContent')
+            && str_contains($request->url(), 'key=test-gemini-key')
+            && !str_contains(json_encode($request['contents']), 'ahmed@example.com')
+            && !str_contains(json_encode($request['contents']), '12345678'));
 
         $candidate->refresh();
         $this->assertSame('cvs/summaries/' . $candidate->id . '.html', $candidate->summary_cv_path);
@@ -88,8 +85,8 @@ class CandidateSummaryTest extends TestCase
         Storage::fake('local');
         Mail::fake();
         config([
-            'services.openai.api_key' => 'test-openai-key',
-            'services.openai.model' => 'gpt-6.2-sol',
+            'services.gemini.api_key' => 'test-gemini-key',
+            'services.gemini.model' => 'gemini-3.8-flash',
         ]);
 
         $candidate = $this->createCandidate();
@@ -97,11 +94,9 @@ class CandidateSummaryTest extends TestCase
         Storage::disk('local')->put($candidate->original_cv_path, $pdfContents);
 
         Http::fake([
-            'api.openai.com/v1/responses' => Http::response([
-                'output' => [[
-                    'type' => 'message',
-                    'content' => [[
-                        'type' => 'output_text',
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [[
                         'text' => json_encode([
                             'summary' => 'خبرة مهنية في التمريض.',
                             'skills' => ['تمريض'],
@@ -109,7 +104,7 @@ class CandidateSummaryTest extends TestCase
                             'inferred_title' => 'ممرض',
                             'inferred_specialty' => 'تمريض عام',
                         ], JSON_UNESCAPED_UNICODE),
-                    ]],
+                    ]]],
                 ]],
             ]),
         ]);
@@ -122,11 +117,10 @@ class CandidateSummaryTest extends TestCase
         };
         $job->handle();
 
-        Http::assertSent(fn ($request) => $request['model'] === 'gpt-6.2-sol'
-            && collect($request['input'][0]['content'])->contains(fn ($part) =>
-                ($part['type'] ?? null) === 'input_file'
-                && ($part['detail'] ?? null) === 'high'
-                && ($part['file_data'] ?? null) === 'data:application/pdf;base64,' . base64_encode($pdfContents)));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'models/gemini-3.8-flash:generateContent')
+            && collect($request['contents'][0]['parts'])->contains(fn ($part) =>
+                ($part['inline_data']['mime_type'] ?? null) === 'application/pdf'
+                && ($part['inline_data']['data'] ?? null) === base64_encode($pdfContents)));
 
         $candidate->refresh();
         $this->assertNotNull($candidate->summary_cv_path);
