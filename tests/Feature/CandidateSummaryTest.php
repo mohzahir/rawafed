@@ -25,7 +25,7 @@ class CandidateSummaryTest extends TestCase
         Mail::fake();
         config([
             'services.groq.api_key' => 'test-groq-key',
-            'services.groq.model' => 'llama-3.3-70b-versatile',
+            'services.groq.model' => 'qwen/qwen3.8-27b',
         ]);
 
         $candidate = $this->createCandidate();
@@ -56,7 +56,7 @@ class CandidateSummaryTest extends TestCase
 
         Http::assertSent(fn ($request) => str_contains($request->url(), 'api.groq.com/openai/v1/chat/completions')
             && $request->hasHeader('Authorization', 'Bearer test-groq-key')
-            && $request['model'] === 'llama-3.3-70b-versatile'
+            && $request['model'] === 'qwen/qwen3.8-27b'
             && !str_contains(json_encode($request['messages']), 'ahmed@example.com')
             && !str_contains(json_encode($request['messages']), '12345678'));
 

@@ -85,7 +85,15 @@ class ProcessCandidateCV implements ShouldQueue
                 ]);
 
             if (!$response->successful()) {
-                throw new \RuntimeException('Groq API request failed with status ' . $response->status());
+                    $providerMessage = $response->json('error.message') ?? 'No provider error message returned.';
+                    Log::error('Groq API request failed.', [
+                        'candidate_id' => $candidate->id,
+                        'status' => $response->status(),
+                        'model' => config('services.groq.model'),
+                        'provider_message' => mb_substr((string) $providerMessage, 0, 1000),
+                    ]);
+
+                    throw new \RuntimeException('Groq API request failed with status ' . $response->status());
             }
 
             $aiText = $response->json('choices.0.message.content');
