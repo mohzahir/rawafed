@@ -25,23 +25,27 @@ class CandidateSummaryTest extends TestCase
         Storage::fake('public');
         Mail::fake();
         config([
-            'services.groq.api_key' => 'test-groq-key',
-            'services.groq.model' => 'qwen/qwen3.8-27b',
+            'services.openai.api_key' => 'test-openai-key',
+            'services.openai.model' => 'gpt-6.2-sol',
         ]);
 
         $candidate = $this->createCandidate();
         Storage::disk('local')->put($candidate->original_cv_path, 'fake pdf bytes');
 
         Http::fake([
-            'api.groq.com/*' => Http::response([
-                'choices' => [[
-                    'message' => ['content' => json_encode([
-                        'summary' => 'خبرة في العناية المركزة. د. أحمد ahmed@example.com 12345678',
-                        'skills' => ['العناية المركزة'],
-                        'experience_years' => 8,
-                        'inferred_title' => 'طبيب استشاري',
-                        'inferred_specialty' => 'عناية مركزة',
-                    ], JSON_UNESCAPED_UNICODE)],
+            'api.openai.com/v1/responses' => Http::response([
+                'output' => [[
+                    'type' => 'message',
+                    'content' => [[
+                        'type' => 'output_text',
+                        'text' => json_encode([
+                            'summary' => 'خبرة في العناية المركزة. د. أحمد ahmed@example.com 12345678',
+                            'skills' => ['العناية المركزة'],
+                            'experience_years' => 8,
+                            'inferred_title' => 'طبيب استشاري',
+                            'inferred_specialty' => 'عناية مركزة',
+                        ], JSON_UNESCAPED_UNICODE),
+                    ]],
                 ]],
             ]),
         ]);
@@ -55,11 +59,11 @@ class CandidateSummaryTest extends TestCase
         };
         $job->handle();
 
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.groq.com/openai/v1/chat/completions')
-            && $request->hasHeader('Authorization', 'Bearer test-groq-key')
-            && $request['model'] === 'qwen/qwen3.8-27b'
-            && !str_contains(json_encode($request['messages']), 'ahmed@example.com')
-            && !str_contains(json_encode($request['messages']), '12345678'));
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.openai.com/v1/responses')
+            && $request->hasHeader('Authorization', 'Bearer test-openai-key')
+            && $request['model'] === 'gpt-6.2-sol'
+            && !str_contains(json_encode($request['input']), 'ahmed@example.com')
+            && !str_contains(json_encode($request['input']), '12345678'));
 
         $candidate->refresh();
         $this->assertSame('cvs/summaries/' . $candidate->id . '.html', $candidate->summary_cv_path);
@@ -77,6 +81,56 @@ class CandidateSummaryTest extends TestCase
             ->assertOk()
             ->assertSee('خبرة في العناية المركزة')
             ->assertDontSee('fake pdf bytes');
+    }
+
+    public function test_scanned_pdf_is_sent_as_a_high_detail_file_for_ocr(): void
+    {
+        Storage::fake('local');
+        Mail::fake();
+        config([
+            'services.openai.api_key' => 'test-openai-key',
+            'services.openai.model' => 'gpt-6.2-sol',
+        ]);
+
+        $candidate = $this->createCandidate();
+        $pdfContents = '%PDF-scanned-cv';
+        Storage::disk('local')->put($candidate->original_cv_path, $pdfContents);
+
+        Http::fake([
+            'api.openai.com/v1/responses' => Http::response([
+                'output' => [[
+                    'type' => 'message',
+                    'content' => [[
+                        'type' => 'output_text',
+                        'text' => json_encode([
+                            'summary' => 'خبرة مهنية في التمريض.',
+                            'skills' => ['تمريض'],
+                            'experience_years' => 5,
+                            'inferred_title' => 'ممرض',
+                            'inferred_specialty' => 'تمريض عام',
+                        ], JSON_UNESCAPED_UNICODE),
+                    ]],
+                ]],
+            ]),
+        ]);
+
+        $job = new class($candidate->id) extends ProcessCandidateCV {
+            protected function extractPdfText(string $pdfContents): string
+            {
+                return '';
+            }
+        };
+        $job->handle();
+
+        Http::assertSent(fn ($request) => $request['model'] === 'gpt-6.2-sol'
+            && collect($request['input'][0]['content'])->contains(fn ($part) =>
+                ($part['type'] ?? null) === 'input_file'
+                && ($part['detail'] ?? null) === 'high'
+                && ($part['file_data'] ?? null) === 'data:application/pdf;base64,' . base64_encode($pdfContents)));
+
+        $candidate->refresh();
+        $this->assertNotNull($candidate->summary_cv_path);
+        Storage::disk('local')->assertExists($candidate->summary_cv_path);
     }
 
     public function test_unprocessed_or_inactive_candidates_do_not_expose_a_summary(): void

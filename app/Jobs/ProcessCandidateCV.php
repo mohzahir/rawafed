@@ -51,56 +51,69 @@ class ProcessCandidateCV implements ShouldQueue
         }
 
         try {
-            $apiKey = config('services.groq.api_key');
+            $apiKey = config('services.openai.api_key');
             if (!$apiKey) {
-                throw new \RuntimeException('GROQ_API_KEY is not configured.');
+                throw new \RuntimeException('OPENAI_API_KEY is not configured.');
             }
 
-            $pdfText = $this->extractPdfText($originalDisk->get($candidate->original_cv_path));
-            if (mb_strlen(trim($pdfText)) < 80) {
-                throw new \RuntimeException('The PDF has too little extractable text; scanned CVs require OCR.');
+            $pdfContents = $originalDisk->get($candidate->original_cv_path);
+            $pdfText = trim($this->extractPdfText($pdfContents));
+            $hasExtractableText = mb_strlen($pdfText) >= 80;
+
+            $prompt = 'أنت خبير توظيف طبي. أنشئ ملخصاً مهنياً دقيقاً باللغة العربية من السيرة الذاتية المرفقة أو نصها. أخرج JSON صالحاً فقط بالمفاتيح: "summary" (ملخص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. لا تُدرج اسم المرشح أو البريد أو الهاتف أو العنوان الدقيق أو تاريخ الميلاد أو أرقام الهوية أو الروابط أو أي بيانات اتصال أو تعريف شخصية. أدرج الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.';
+
+            $userContent = [['type' => 'input_text', 'text' => $prompt]];
+            if ($hasExtractableText) {
+                $pdfText = str_replace(
+                    array_filter([$candidate->full_name, $candidate->email, $candidate->phone]),
+                    '[بيانات محذوفة]',
+                    $pdfText
+                );
+                $pdfText = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu', '[بريد محذوف]', $pdfText) ?? $pdfText;
+                $pdfText = preg_replace('/(?:https?:\/\/|www\.)\S+/iu', '[رابط محذوف]', $pdfText) ?? $pdfText;
+                $userContent[] = [
+                    'type' => 'input_text',
+                    'text' => "Extracted CV text:\n" . mb_substr($pdfText, 0, 24000),
+                ];
+            } else {
+                $userContent[] = [
+                    'type' => 'input_file',
+                    'filename' => 'candidate-cv.pdf',
+                    'file_data' => 'data:application/pdf;base64,' . base64_encode($pdfContents),
+                    'detail' => 'high',
+                ];
             }
 
-            $pdfText = str_replace(
-                array_filter([$candidate->full_name, $candidate->email, $candidate->phone]),
-                '[بيانات محذوفة]',
-                $pdfText
-            );
-            $pdfText = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu', '[بريد محذوف]', $pdfText) ?? $pdfText;
-            $pdfText = preg_replace('/(?:https?:\/\/|www\.)\S+/iu', '[رابط محذوف]', $pdfText) ?? $pdfText;
-
-            $prompt = 'أنت خبير توظيف طبي. اكتب ملخصاً مهنياً دقيقاً باللغة العربية اعتماداً على نص السيرة أدناه. أخرج JSON صالحاً فقط بالمفاتيح: "summary" (ملخص منظم بعناوين قصيرة)، "skills" (مصفوفة مهارات)، "experience_years" (عدد صحيح أو null)، "inferred_title" (مسمى مهني أو null)، "inferred_specialty" (تخصص أو null). لا تخمّن أي معلومة غير موجودة. لا تُدرج اسم المرشح أو البريد أو الهاتف أو العنوان أو تاريخ الميلاد أو أرقام الهوية أو الروابط أو أي بيانات اتصال أو تعريف شخصية. أدرج الخبرات والمؤهلات والتراخيص والمهارات واللغات فقط إن كانت موجودة.\n\nنص السيرة الذاتية:\n' . mb_substr($pdfText, 0, 24000);
             $response = Http::withToken($apiKey)
                 ->acceptJson()
                 ->timeout(120)
-                ->post('https://api.groq.com/openai/v1/chat/completions', [
-                    'model' => config('services.groq.model'),
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'أخرج JSON صالحاً فقط. لا تكشف بيانات التعريف الشخصية الواردة في نص السيرة.'],
-                        ['role' => 'user', 'content' => $prompt],
-                    ],
-                    'response_format' => ['type' => 'json_object'],
-                    'temperature' => 0.1,
-                    'max_tokens' => 2500,
+                ->post('https://api.openai.com/v1/responses', [
+                    'model' => config('services.openai.model'),
+                    'instructions' => 'أخرج JSON صالحاً فقط. لا تكشف بيانات التعريف الشخصية الواردة في السيرة. إن كانت السيرة ممسوحة ضوئياً، اقرأ النص من صور الصفحات ثم لخّص الخبرة المهنية فقط.',
+                    'input' => [[
+                        'role' => 'user',
+                        'content' => $userContent,
+                    ]],
+                    'max_output_tokens' => 2500,
                 ]);
 
             if (!$response->successful()) {
-                    $providerMessage = $response->json('error.message') ?? 'No provider error message returned.';
-                    Log::error('Groq API request failed.', [
-                        'candidate_id' => $candidate->id,
-                        'status' => $response->status(),
-                        'model' => config('services.groq.model'),
-                        'provider_message' => mb_substr((string) $providerMessage, 0, 1000),
-                    ]);
+                $providerMessage = $response->json('error.message') ?? 'No provider error message returned.';
+                Log::error('OpenAI API request failed.', [
+                    'candidate_id' => $candidate->id,
+                    'status' => $response->status(),
+                    'model' => config('services.openai.model'),
+                    'provider_message' => mb_substr((string) $providerMessage, 0, 1000),
+                ]);
 
-                    throw new \RuntimeException('Groq API request failed with status ' . $response->status());
+                throw new \RuntimeException('OpenAI API request failed with status ' . $response->status());
             }
 
-            $aiText = $response->json('choices.0.message.content');
+            $aiText = $this->extractResponseText($response->json());
             $parsedData = json_decode(trim(str_replace(['```json', '```'], '', (string) $aiText)), true);
             $summary = trim((string) ($parsedData['summary'] ?? ''));
             if (!is_array($parsedData) || $summary === '') {
-                throw new \RuntimeException('Groq did not return a usable CV summary.');
+                throw new \RuntimeException('OpenAI did not return a usable CV summary.');
             }
 
             $summary = str_replace(
@@ -162,5 +175,23 @@ class ProcessCandidateCV implements ShouldQueue
         $parser = new \Smalot\PdfParser\Parser();
 
         return $parser->parseContent($pdfContents)->getText();
+    }
+
+    protected function extractResponseText(array $response): string
+    {
+        if (isset($response['output_text'])) {
+            return (string) $response['output_text'];
+        }
+
+        $text = [];
+        foreach ($response['output'] ?? [] as $item) {
+            foreach ($item['content'] ?? [] as $content) {
+                if (($content['type'] ?? null) === 'output_text') {
+                    $text[] = $content['text'] ?? '';
+                }
+            }
+        }
+
+        return implode("\n", $text);
     }
 }

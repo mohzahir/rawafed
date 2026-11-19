@@ -2,9 +2,9 @@
 
 return [
 
-    'groq' => [
-        'api_key' => env('GROQ_API_KEY'),
-        'model' => env('GROQ_MODEL', 'qwen/qwen3.8-27b'),
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-6.2-sol'),
     ],
 
     /*
