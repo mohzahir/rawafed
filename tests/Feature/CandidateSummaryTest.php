@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\ProcessCandidateCV;
 use App\Livewire\Admin\Dashboard;
+use App\Http\Controllers\Admin\CandidateSummaryController as AdminCandidateSummaryController;
 use App\Models\Candidate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -99,6 +100,23 @@ class CandidateSummaryTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf')
             ->assertSee('%PDF-private-cv', false);
+    }
+
+    public function test_admin_can_view_an_inactive_candidates_summary_but_public_route_cannot(): void
+    {
+        Storage::fake('local');
+        $candidate = $this->createCandidate();
+        $candidate->update(['summary_cv_path' => 'cvs/summaries/' . $candidate->id . '.html']);
+        Storage::disk('local')->put($candidate->summary_cv_path, '<h1>Private candidate summary</h1>');
+
+        $this->get(route('candidates.summary', $candidate))->assertNotFound();
+
+        $this->get(route('admin.candidates.summary', $candidate))->assertRedirect(route('login'));
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('admin.candidates.summary', $candidate))
+            ->assertOk()
+            ->assertSee('Private candidate summary');
     }
 
     public function test_dashboard_toggle_requires_a_summary_to_activate_and_can_toggle_ready_candidates(): void

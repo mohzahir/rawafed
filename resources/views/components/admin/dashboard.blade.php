@@ -100,6 +100,12 @@
                                 
                                 <td class="px-6 py-4 text-center">
                                     <div class="flex items-center justify-center gap-2">
+                                        @if($candidate->summary_cv_path)
+                                            <a href="{{ route('admin.candidates.summary', $candidate) }}" target="_blank" rel="noopener" class="text-emerald-600 hover:text-emerald-800 bg-emerald-50 p-2 rounded-lg transition" title="عرض ملخص السيرة الذاتية" aria-label="عرض ملخص السيرة الذاتية">
+                                                📋
+                                            </a>
+                                        @endif
+
                                         @if($candidate->original_cv_path)
                                             <a href="{{ route('admin.candidates.original-cv', $candidate) }}" target="_blank" rel="noopener" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg transition" title="عرض السيرة الأصلية">
                                                 📄
